@@ -1,0 +1,47 @@
+services:
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gridquizz
+      POSTGRES_USER: gridquizz
+      POSTGRES_PASSWORD: gridquizz
+    healthcheck:
+      test: ["CMD", "pg_isready", "-d", "gridquizz", "-U", "gridquizz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  php:
+    build:
+      context: ./api
+    working_dir: /app
+    volumes:
+      - ./api:/app
+      - php_vendor:/app/vendor
+      - php_var:/app/var
+    ports:
+      - "8000:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+    command: php -S 0.0.0.0:8000 -t public
+
+  front:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./front:/app
+      - front_node_modules:/app/node_modules
+    ports:
+      - "5174:5173"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+
+volumes:
+  db_data:
+  front_node_modules:
+  php_vendor:
+  php_var:
