@@ -49,11 +49,11 @@ h1 {
 }
 
 h2 {
-  font-size: 1.25rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 0.75rem;
+  font-size: 1.4rem;
+  color: var(--text);
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
 }
 
 p {
@@ -76,7 +76,7 @@ a:hover {
   padding: 2.5rem 1.5rem 4rem;
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 2.75rem;
 }
 
 .topbar {
@@ -103,8 +103,14 @@ a:hover {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1.5rem;
+  padding: 1.75rem 2rem;
   box-shadow: var(--shadow);
+}
+
+.subsection-form {
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+  margin-top: 0.5rem;
 }
 
 .list {
@@ -174,7 +180,8 @@ form {
 
 input[type='text'],
 input[type='number'],
-input:not([type]) {
+input:not([type]),
+textarea {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -184,12 +191,20 @@ input:not([type]) {
   font-family: inherit;
 }
 
-input:focus-visible {
+textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 2.75rem;
+}
+
+input:focus-visible,
+textarea:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-input.is-invalid {
+input.is-invalid,
+textarea.is-invalid {
   border-color: var(--danger);
 }
 
@@ -305,17 +320,22 @@ select {
 .is-rainbow {
   background: linear-gradient(
     90deg,
-    #ff3b3b,
-    #ff9f1c,
-    #ffe135,
-    #4dd639,
-    #1cc7d0,
-    #3b82f6,
-    #a855f7,
-    #ff3b3b
+    #ff0000,
+    #ff8000,
+    #ffff00,
+    #80ff00,
+    #00ff00,
+    #00ff80,
+    #00ffff,
+    #0080ff,
+    #0000ff,
+    #8000ff,
+    #ff00ff,
+    #ff0080,
+    #ff0000
   ) !important;
-  background-size: 300% 100% !important;
-  animation: rainbow-shift 4s linear infinite;
+  background-size: 200% 100% !important;
+  animation: rainbow-shift 3s linear infinite;
 }
 
 @keyframes rainbow-shift {
@@ -323,7 +343,7 @@ select {
     background-position: 0% 50%;
   }
   to {
-    background-position: 300% 50%;
+    background-position: 200% 50%;
   }
 }
 
@@ -357,8 +377,16 @@ select {
   margin-bottom: 0.5rem;
 }
 
+.question-item {
+  align-items: flex-start;
+}
+
 .question-inputs {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 16rem;
 }
 
 .color-swatches {

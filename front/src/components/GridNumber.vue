@@ -3,6 +3,7 @@ defineProps({
   number: { type: Number, required: true },
   color: { type: String, required: true },
   disabled: { type: Boolean, default: false },
+  hideNumber: { type: Boolean, default: false },
 })
 defineEmits(['click'])
 </script>
@@ -17,14 +18,16 @@ defineEmits(['click'])
     @click="$emit('click')"
   >
     <span v-if="disabled">✓</span>
-    <span v-else>{{ number }}</span>
+    <span v-else-if="!hideNumber">{{ number }}</span>
   </button>
 </template>
 
 <style scoped>
 .grid-number {
   aspect-ratio: 1;
-  font-size: 1.75rem;
+  /* Follows --cell-px (set on the .grid container in GameView from the
+     measured, actually-available space) so the digits scale with the cells. */
+  font-size: clamp(0.75rem, calc(var(--cell-px, 88px) * 0.32), 2.5rem);
   font-weight: 800;
   color: #fff;
   border: none;
@@ -36,7 +39,8 @@ defineEmits(['click'])
   transition:
     transform 0.12s ease,
     box-shadow 0.12s ease,
-    filter 0.2s ease;
+    filter 0.2s ease,
+    background-color 0.4s ease;
 }
 
 .grid-number:hover:not(:disabled) {

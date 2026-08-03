@@ -330,7 +330,7 @@ onBeforeUnmount(() => {
         </form>
       </section>
 
-      <section>
+      <section class="card">
         <h2>Thèmes &amp; joueurs</h2>
         <ul class="list">
           <li v-for="t in orderedThemes" :key="t.id" class="list-item">
@@ -344,7 +344,7 @@ onBeforeUnmount(() => {
             <button class="btn btn-danger btn-sm" type="button" @click="removeTheme(t)">Supprimer</button>
           </li>
         </ul>
-        <form class="card" @submit.prevent="addTheme">
+        <form class="subsection-form" @submit.prevent="addTheme">
           <div class="field-row">
             <label class="field">
               Nom du thème
@@ -379,7 +379,7 @@ onBeforeUnmount(() => {
         </form>
       </section>
 
-      <section>
+      <section class="card">
         <h2>Questions</h2>
 
         <div v-for="t in orderedThemes" :key="t.id" class="theme-questions">
@@ -391,22 +391,28 @@ onBeforeUnmount(() => {
             <span class="list-item-meta">{{ questionCountFor(t) }} question(s)</span>
           </h3>
           <ul class="list">
-            <li v-for="q in questionsFor(t)" :key="q.id" class="list-item">
-              <div class="field-row question-inputs">
-                <input
-                  v-model="q.questionText"
-                  type="text"
-                  placeholder="Question"
-                  :class="{ 'is-invalid': !q.questionText.trim() }"
-                  @input="markQuestionsDirty"
-                />
-                <input
-                  v-model="q.answerText"
-                  type="text"
-                  placeholder="Réponse"
-                  :class="{ 'is-invalid': !q.answerText.trim() }"
-                  @input="markQuestionsDirty"
-                />
+            <li v-for="q in questionsFor(t)" :key="q.id" class="list-item question-item">
+              <div class="question-inputs">
+                <label class="field">
+                  Question
+                  <textarea
+                    v-model="q.questionText"
+                    rows="2"
+                    placeholder="Question"
+                    :class="{ 'is-invalid': !q.questionText.trim() }"
+                    @input="markQuestionsDirty"
+                  ></textarea>
+                </label>
+                <label class="field">
+                  Réponse
+                  <textarea
+                    v-model="q.answerText"
+                    rows="2"
+                    placeholder="Réponse"
+                    :class="{ 'is-invalid': !q.answerText.trim() }"
+                    @input="markQuestionsDirty"
+                  ></textarea>
+                </label>
               </div>
               <button class="btn btn-danger btn-sm" type="button" @click="removeQuestion(q)">Supprimer</button>
             </li>

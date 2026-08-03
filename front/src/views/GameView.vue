@@ -1,10 +1,13 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiFetch } from '../api/client'
 import GridNumber from '../components/GridNumber.vue'
 import QuestionModal from '../components/QuestionModal.vue'
+import PodiumModal from '../components/PodiumModal.vue'
 import ColorDot from '../components/ColorDot.vue'
+
+const GRID_GAP = 10 // px — keep in sync with the .grid CSS `gap`
 
 const props = defineProps({ id: [String, Number] })
 const route = useRoute()
@@ -19,13 +22,97 @@ const revealed = ref(true)
 const loading = ref(true)
 const error = ref(null)
 const selectedQuestion = ref(null)
+const showPodium = ref(false)
+const countdown = ref(0)
+
+const gridEl = ref(null)
+const gridSize = ref({ width: 0, height: 0 })
+let resizeObserver = null
 
 let revealTimer = null
+let countdownTimer = null
+
+function runCountdown(seconds = 3) {
+  return new Promise((resolve) => {
+    clearInterval(countdownTimer)
+    countdown.value = seconds
+    countdownTimer = setInterval(() => {
+      countdown.value -= 1
+      if (countdown.value <= 0) {
+        clearInterval(countdownTimer)
+        countdown.value = 0
+        resolve()
+      }
+    }, 1000)
+  })
+}
+
+const allAnswered = computed(() => questions.value.length > 0 && questions.value.every((q) => q.answered))
+
+// Focus mode (sidebar hidden, grid at its biggest) covers both the color
+// memorization window AND the countdown that precedes it, so the game screen
+// is already in its "big grid" shape by the time the countdown appears.
+const focusMode = computed(() => revealed.value || countdown.value > 0)
+
+const rankedPlayers = computed(() =>
+  [...players.value].sort((a, b) => b.score - a.score).map((p) => ({ ...p, theme: themeOfPlayer(p) })),
+)
+
+// One unified list for the sidebar: normal themes paired with their player
+// (ranked by score), plus the bonus theme (no player) tacked on at the end.
+const sidebarEntries = computed(() => {
+  const normal = themes.value
+    .filter((t) => !t.bonus)
+    .map((theme) => ({ theme, player: players.value.find((p) => p.theme === theme['@id']) ?? null }))
+    .sort((a, b) => (b.player?.score ?? 0) - (a.player?.score ?? 0))
+  const bonus = themes.value.filter((t) => t.bonus).map((theme) => ({ theme, player: null }))
+  return [...normal, ...bonus]
+})
+
+// Theme name + color, bonus last — shown as a legend during the countdown and
+// the color-reveal window, since the sidebar (which normally carries this
+// info via the scoreboard) is hidden throughout both.
+const legendThemes = computed(() => {
+  const normal = themes.value.filter((t) => !t.bonus)
+  const bonus = themes.value.filter((t) => t.bonus)
+  return [...normal, ...bonus]
+})
 
 const questionByNumber = computed(() => {
   const map = new Map()
   questions.value.forEach((q) => map.set(q.number, q))
   return map
+})
+
+// Pick the column count that yields the biggest square cell fitting the
+// *actually measured* grid area (both width and height), instead of a size
+// guessed from question count alone — that left a lot of empty space below
+// the grid whenever a wide container produced few rows.
+function bestColumnCount(width, height, count) {
+  if (count === 0 || width <= 0 || height <= 0) {
+    return Math.max(1, Math.ceil(Math.sqrt(count || 1)))
+  }
+  let bestCols = 1
+  let bestCellSize = 0
+  for (let cols = 1; cols <= count; cols++) {
+    const rows = Math.ceil(count / cols)
+    const cellWidth = (width - GRID_GAP * (cols - 1)) / cols
+    const cellHeight = (height - GRID_GAP * (rows - 1)) / rows
+    const cellSize = Math.min(cellWidth, cellHeight)
+    if (cellSize > bestCellSize) {
+      bestCellSize = cellSize
+      bestCols = cols
+    }
+  }
+  return bestCols
+}
+
+const gridColumns = computed(() => bestColumnCount(gridSize.value.width, gridSize.value.height, gridOrder.value.length))
+
+const gridCellPx = computed(() => {
+  const cols = gridColumns.value
+  if (!cols || !gridSize.value.width) return 0
+  return (gridSize.value.width - GRID_GAP * (cols - 1)) / cols
 })
 
 const selectedTheme = computed(() => (selectedQuestion.value ? themeOf(selectedQuestion.value) : null))
@@ -85,14 +172,15 @@ async function load() {
     questions.value = currentQuestions
     buildGridOrder()
     await refreshTurnState()
+    // Reveal the grid (grid area, sidebar, etc.) before counting down, so the
+    // countdown overlay appears on top of the actual game screen instead of
+    // running behind the "Chargement..." placeholder.
+    revealed.value = false
+    loading.value = false
 
     if (isFreshStart) {
+      await runCountdown()
       startRevealTimer()
-    } else {
-      // Resuming a game already in progress: pick up exactly where it was left,
-      // without re-revealing the theme colors.
-      clearTimeout(revealTimer)
-      revealed.value = false
     }
   } catch (e) {
     error.value = e.message
@@ -134,6 +222,9 @@ async function resolveQuestion(correct) {
   })
   selectedQuestion.value = null
   await refreshTurnState()
+  if (allAnswered.value) {
+    showPodium.value = true
+  }
 }
 
 async function resetGame() {
@@ -142,16 +233,34 @@ async function resetGame() {
   buildGridOrder()
   await refreshTurnState()
   selectedQuestion.value = null
+  showPodium.value = false
   clearTimeout(revealTimer)
   revealed.value = false
+  await runCountdown()
+  startRevealTimer()
 }
 
-onMounted(load)
-onUnmounted(() => clearTimeout(revealTimer))
+onMounted(async () => {
+  await load()
+  await nextTick()
+  if (gridEl.value) {
+    resizeObserver = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect
+      gridSize.value = { width, height }
+    })
+    resizeObserver.observe(gridEl.value)
+  }
+})
+
+onUnmounted(() => {
+  clearTimeout(revealTimer)
+  clearInterval(countdownTimer)
+  resizeObserver?.disconnect()
+})
 </script>
 
 <template>
-  <div class="page">
+  <div class="page game-page">
     <p v-if="loading" class="empty-state">Chargement...</p>
     <p v-else-if="error" class="empty-state">Erreur : {{ error }}</p>
     <template v-else>
@@ -160,45 +269,81 @@ onUnmounted(() => clearTimeout(revealTimer))
           <router-link class="back-link" :to="{ name: 'session-list' }">&larr; Sessions</router-link>
           <h1>{{ session.name }}</h1>
         </div>
-        <button class="btn btn-danger" type="button" @click="resetGame">↺ Réinitialiser</button>
-      </div>
-
-      <div v-if="currentPlayer" class="turn-banner">
-        <span>🎯 Au tour de <strong>{{ currentPlayer.name }}</strong></span>
-        <span class="badge">
-          <ColorDot :color="themeOfPlayer(currentPlayer)?.color" />
-          {{ themeOfPlayer(currentPlayer)?.name }}
-        </span>
-      </div>
-
-      <div v-if="players.length" class="scoreboard">
-        <div
-          v-for="player in players"
-          :key="player.id"
-          class="scoreboard-item"
-          :class="{ 'is-current': currentPlayer && currentPlayer.id === player.id }"
-        >
-          <ColorDot :color="themeOfPlayer(player)?.color" />
-          <span class="scoreboard-name">{{ player.name }}</span>
-          <span class="scoreboard-score">{{ player.score }}</span>
+        <div class="list-item-actions">
+          <button v-if="allAnswered" class="btn btn-success" type="button" @click="showPodium = true">
+            🏆 Podium
+          </button>
+          <button class="btn btn-danger" type="button" @click="resetGame">↺ Réinitialiser</button>
         </div>
       </div>
 
-      <div class="legend">
-        <span v-for="t in themes" :key="t.id" class="badge">
-          <ColorDot :color="t.color" />{{ t.name }}
+      <div v-if="revealed && countdown === 0" class="theme-legend theme-legend-bar">
+        <span v-for="theme in legendThemes" :key="theme.id" class="theme-legend-item">
+          <ColorDot :color="theme.color" />
+          {{ theme.name }}
         </span>
       </div>
 
-      <div class="grid">
-        <GridNumber
-          v-for="number in gridOrder"
-          :key="number"
-          :number="number"
-          :color="revealed ? themeColor(questionByNumber.get(number)) : '#000000'"
-          :disabled="questionByNumber.get(number).answered"
-          @click="selectQuestion(questionByNumber.get(number))"
-        />
+      <div class="game-layout">
+        <aside class="game-sidebar" :class="{ 'is-hidden': focusMode }">
+          <div v-if="currentPlayer" class="turn-banner">
+            <span>🎯 Au tour de <strong>{{ currentPlayer.name }}</strong></span>
+            <span class="badge">
+              <ColorDot :color="themeOfPlayer(currentPlayer)?.color" />
+              {{ themeOfPlayer(currentPlayer)?.name }}
+            </span>
+          </div>
+
+          <div v-if="sidebarEntries.length">
+            <h2 class="sidebar-title">Classement</h2>
+            <div class="scoreboard">
+              <div
+                v-for="entry in sidebarEntries"
+                :key="entry.theme.id"
+                class="scoreboard-item"
+                :class="{ 'is-current': entry.player && currentPlayer && currentPlayer.id === entry.player.id }"
+              >
+                <ColorDot :color="entry.theme.color" />
+                <div class="scoreboard-info">
+                  <span class="scoreboard-name">{{ entry.player ? entry.player.name : entry.theme.name }}</span>
+                  <span v-if="entry.player" class="scoreboard-theme">{{ entry.theme.name }}</span>
+                </div>
+                <span v-if="entry.player" class="scoreboard-score">{{ entry.player.score }}</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <div class="game-main">
+          <div v-if="countdown > 0" class="countdown-overlay">
+            <span :key="countdown" class="countdown-number">{{ countdown }}</span>
+            <div class="theme-legend">
+              <span v-for="theme in legendThemes" :key="theme.id" class="theme-legend-item is-lg">
+                <ColorDot :color="theme.color" />
+                {{ theme.name }}
+              </span>
+            </div>
+          </div>
+          <div
+            ref="gridEl"
+            class="grid"
+            :class="{ 'is-focus': focusMode }"
+            :style="{
+              gridTemplateColumns: `repeat(${gridColumns}, 1fr)`,
+              '--cell-px': gridCellPx + 'px',
+            }"
+          >
+            <GridNumber
+              v-for="number in gridOrder"
+              :key="number"
+              :number="number"
+              :color="revealed ? themeColor(questionByNumber.get(number)) : '#000000'"
+              :hide-number="countdown > 0"
+              :disabled="questionByNumber.get(number).answered || countdown > 0"
+              @click="selectQuestion(questionByNumber.get(number))"
+            />
+          </div>
+        </div>
       </div>
 
       <QuestionModal
@@ -207,35 +352,205 @@ onUnmounted(() => clearTimeout(revealTimer))
         :theme="selectedTheme"
         @resolve="resolveQuestion"
       />
+
+      <PodiumModal v-if="showPodium" :players="rankedPlayers" @close="showPodium = false" />
     </template>
   </div>
 </template>
 
 <style scoped>
-.legend {
+.game-page {
+  max-width: 100rem;
+  min-height: 100vh;
+  padding: 1.5rem;
+  /* Tighter than the .page default (2.75rem): keeps the topbar close to the
+     game area, and the theme legend bar close to the grid during the
+     memorization phase. */
+  gap: 1rem;
+}
+
+.game-layout {
+  display: flex;
+  /* stretch (not flex-start): .game-main must receive the layout's full
+     height, otherwise the grid sizes off its own content instead of the
+     actually available space and the "everything must fit" guarantee breaks. */
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+}
+
+.game-sidebar {
+  /* Width lives here (not on .game-layout's gap) so it — and the gap next to
+     it — can animate away together while the theme colors are memorized. */
+  flex: 0 0 auto;
+  width: 16rem;
+  margin-right: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  position: sticky;
+  top: 1.5rem;
+  max-height: calc(100vh - 3rem);
+  overflow: hidden auto;
+  opacity: 1;
+  transition:
+    width 0.45s ease,
+    margin-right 0.45s ease,
+    opacity 0.3s ease;
+}
+
+.game-sidebar.is-hidden {
+  width: 0;
+  margin-right: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.game-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  /* Centers the (max-height-capped) grid when the available area is taller
+     than 80vh, instead of leaving the leftover space stuck at the bottom. */
+  align-items: center;
+  justify-content: center;
+}
+
+.countdown-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  background: rgba(11, 15, 30, 0.75);
+  border-radius: var(--radius);
+}
+
+.countdown-number {
+  font-size: clamp(5rem, 22vw, 14rem);
+  font-weight: 900;
+  color: var(--accent);
+  text-shadow: 0 8px 30px rgba(139, 92, 246, 0.6);
+  animation: countdown-pulse 1s ease-out;
+}
+
+@keyframes countdown-pulse {
+  from {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.theme-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  max-width: 90%;
+}
+
+.theme-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* Bigger during the countdown, where it's the main thing on screen. */
+.theme-legend-item.is-lg {
+  font-size: 1.15rem;
+  padding: 0.5rem 1.1rem;
+}
+
+/* Standalone bar variant: shown once colors are revealed (no more countdown
+   backdrop) so the theme/color mapping stays visible while the sidebar is
+   still hidden. Sits as a normal block above `.game-layout` (a sibling, not
+   nested inside `.game-main`/`.grid`'s own sizing machinery) so it takes real
+   space without shrinking the grid — if that pushes the page past the
+   viewport, it scrolls naturally instead. */
+.theme-legend-bar {
+  background: rgba(11, 15, 30, 0.55);
+  backdrop-filter: blur(4px);
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius);
+}
+
+@media (max-width: 768px) {
+  .game-layout {
+    flex-direction: column;
+  }
+
+  .game-sidebar {
+    flex: none;
+    width: 100%;
+    margin-right: 0;
+    position: static;
+    /* Capped so a long player/theme list can never eat into the grid's share
+       of the screen — it scrolls internally instead. */
+    max-height: 30vh;
+  }
+
+  .game-sidebar.is-hidden {
+    max-height: 0;
+    margin-bottom: 0;
+  }
+}
+
+.sidebar-title {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: none;
+  padding: 0;
+  margin-bottom: 0.6rem;
 }
 
 .grid {
+  flex: 1;
+  max-height: 75vh;
+  transition: max-height 0.45s ease;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
-  gap: 1rem;
+  gap: 0.625rem;
+  align-content: center;
+  justify-content: center;
+}
+
+.grid.is-focus {
+  /* Sidebar is hidden during memorization, so the grid can claim the space it
+     freed up — capped just under 100vh to leave breathing room top/bottom. */
+  max-height: 92vh;
 }
 
 .turn-banner {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  font-size: 1.1rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 1.05rem;
 }
 
 .scoreboard {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 .scoreboard-item {
@@ -253,12 +568,30 @@ onUnmounted(() => clearTimeout(revealTimer))
   box-shadow: 0 0 0 1px var(--accent);
 }
 
+.scoreboard-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .scoreboard-name {
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scoreboard-theme {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .scoreboard-score {
   color: var(--accent);
   font-weight: 800;
+  margin-left: auto;
 }
 </style>

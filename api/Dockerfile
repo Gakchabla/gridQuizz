@@ -1,13 +1,13 @@
-FROM php:8.4-cli
+# FrankenPHP: Caddy-based PHP server that handles requests concurrently, unlike
+# `php -S` (single-threaded — every "parallel" front-end fetch was actually queued
+# and served one at a time, which is what made the app feel slow).
+FROM dunglas/frankenphp:php8.4
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        git \
-        unzip \
-        libpq-dev \
-        libicu-dev \
-        libzip-dev \
-    && docker-php-ext-install pdo pdo_pgsql intl zip opcache \
-    && rm -rf /var/lib/apt/lists/*
+RUN install-php-extensions \
+    pdo_pgsql \
+    intl \
+    zip \
+    opcache
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 

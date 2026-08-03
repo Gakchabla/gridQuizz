@@ -19,6 +19,10 @@ services:
     build:
       context: ./api
     working_dir: /app
+    environment:
+      # Bare port (no domain) tells Caddy/FrankenPHP to serve plain HTTP on
+      # :8000, no ACME/HTTPS attempt — fine for local dev.
+      SERVER_NAME: ":8000"
     volumes:
       - ./api:/app
       - php_vendor:/app/vendor
@@ -28,7 +32,6 @@ services:
     depends_on:
       database:
         condition: service_healthy
-    command: php -S 0.0.0.0:8000 -t public
 
   front:
     image: node:20-alpine

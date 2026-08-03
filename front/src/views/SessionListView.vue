@@ -53,7 +53,7 @@ onMounted(loadSessions)
   <div class="page">
     <h1>🎯 Grid Quizz</h1>
 
-    <section>
+    <section class="card">
       <h2>Sessions</h2>
       <p v-if="loading" class="empty-state">Chargement...</p>
       <p v-else-if="error" class="empty-state">Erreur : {{ error }}</p>
