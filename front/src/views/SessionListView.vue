@@ -48,6 +48,15 @@ async function createSession() {
   }
 }
 
+async function deleteSession(session) {
+  if (!confirm(`Supprimer la session "${session.name}" ? Cette action est irréversible.`)) {
+    return
+  }
+  await apiFetch(session['@id'], { method: 'DELETE' })
+  sessions.value = sessions.value.filter((s) => s.id !== session.id)
+  delete gameInProgress.value[session.id]
+}
+
 onMounted(loadSessions)
 </script>
 
@@ -81,6 +90,9 @@ onMounted(loadSessions)
             <router-link class="btn btn-primary btn-sm" :to="{ name: 'session-play', params: { id: session.id } }">
               ▶ Jouer
             </router-link>
+            <button class="btn btn-danger btn-sm" type="button" @click="deleteSession(session)">
+              🗑 Supprimer
+            </button>
           </div>
         </li>
       </ul>

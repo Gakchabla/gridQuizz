@@ -117,6 +117,10 @@ Vite + Vue 3 + Pinia + Vue Router.
 - **Édition de session** : case à cocher "Mode facile" à côté de chaque thème/joueur (normal, pas bonus) dans la section "Thèmes & joueurs" de `SessionEditView.vue`, PATCH immédiat au clic (`toggleEasyMode()`).
 - **Écran de jeu** : `cellColor(question)` (remplace l'ancien `revealed ? themeColor(...) : '#000000'` inline) — pendant la mémorisation (`revealed`), comportement inchangé (toutes les couleurs affichées) ; en dehors (phase noire), si `currentPlayer.easyMode` et que la question appartient au thème du joueur courant, sa couleur reste affichée ; sinon noir comme avant.
 
+## Suppression d'une session (post-plan initial)
+
+- Bouton "🗑 Supprimer" sur chaque ligne de `SessionListView.vue`, à côté de "Jouer". Confirmation via `confirm()` natif du navigateur avant le `DELETE /api/sessions/{id}` (opération déjà présente dans l'API, existait depuis le départ). La suppression cascade côté base (FK `onDelete: CASCADE` sur `theme`/`question`/`player`, `cascade: ['persist','remove']` + `orphanRemoval: true` côté Doctrine) : thèmes, questions et joueurs de la session sont supprimés avec elle.
+
 ## Notes d'implémentation (revue post-étape 6)
 
 - Le `number` d'une question **n'est plus persisté en base** : il a été retiré de l'entité `Question` (colonne + contrainte unique supprimées via migration, `QuestionNumberListener` supprimé). L'association chiffre↔question est désormais **recalculée aléatoirement à chaque chargement de `GameView`** (donc à chaque début de partie), côté front uniquement, en mémoire.
