@@ -20,8 +20,10 @@ async function loadSessions() {
     sessions.value = data.member
     await Promise.all(
       data.member.map(async (session) => {
-        const questions = await Promise.all(session.questions.map((iri) => apiFetch(iri)))
-        gameInProgress.value[session.id] = questions.some((q) => q.number !== null)
+        // One request per session (filtered collection) instead of one per
+        // question — a 9-player session alone has 54 questions.
+        const questions = await apiFetch(`/api/questions?session=${encodeURIComponent(session['@id'])}`)
+        gameInProgress.value[session.id] = questions.member.some((q) => q.number !== null)
       }),
     )
   } catch (e) {

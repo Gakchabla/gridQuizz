@@ -2,6 +2,8 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
+use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Delete;
@@ -15,8 +17,11 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
+#[ApiFilter(SearchFilter::class, properties: ['session' => 'exact'])]
 #[ApiResource(operations: [
-    new GetCollection(),
+    // Collections here are always scoped to one session (never huge) and the
+    // front end wants the full set in one call — no pagination needed.
+    new GetCollection(paginationEnabled: false),
     new Get(),
     new Post(),
     new Put(),

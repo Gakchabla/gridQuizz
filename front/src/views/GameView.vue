@@ -32,7 +32,7 @@ let resizeObserver = null
 let revealTimer = null
 let countdownTimer = null
 
-function runCountdown(seconds = 3) {
+function runCountdown(seconds = 10) {
   return new Promise((resolve) => {
     clearInterval(countdownTimer)
     countdown.value = seconds
@@ -141,13 +141,21 @@ function buildGridOrder() {
   gridOrder.value = session.value.shuffled ? shuffle(numbers) : numbers
 }
 
+// One request for the whole collection (filtered by session) instead of one
+// request per question/theme/player — a 9-player session has 54 questions,
+// so that was up to ~70 parallel requests per load/refresh.
+async function fetchCollection(resource) {
+  const collection = await apiFetch(`/api/${resource}?session=${encodeURIComponent(session.value['@id'])}`)
+  return collection.member
+}
+
 async function fetchQuestions() {
-  return Promise.all(session.value.questions.map((iri) => apiFetch(iri)))
+  return fetchCollection('questions')
 }
 
 async function refreshTurnState() {
   session.value = await apiFetch(`/api/sessions/${props.id}`)
-  players.value = await Promise.all(session.value.players.map((iri) => apiFetch(iri)))
+  players.value = await fetchCollection('players')
   currentPlayer.value = session.value.currentPlayer
     ? (players.value.find((p) => p['@id'] === session.value.currentPlayer) ?? null)
     : null
@@ -157,7 +165,7 @@ async function load() {
   loading.value = true
   try {
     session.value = await apiFetch(`/api/sessions/${props.id}`)
-    themes.value = await Promise.all(session.value.themes.map((iri) => apiFetch(iri)))
+    themes.value = await fetchCollection('themes')
 
     let currentQuestions = await fetchQuestions()
     // A number is only assigned once a game has started (see ResetSessionProcessor).
@@ -396,12 +404,19 @@ onUnmounted(() => {
   transition:
     width 0.45s ease,
     margin-right 0.45s ease,
+    max-height 0.45s ease,
     opacity 0.3s ease;
 }
 
 .game-sidebar.is-hidden {
   width: 0;
   margin-right: 0;
+  /* Without this, the hidden sidebar still reports its natural content
+     height, which `align-items: stretch` on .game-layout uses to stretch
+     .game-main taller than the grid actually needs — pushing the grid down
+     (via .game-main's `justify-content: center`) and opening up a big gap
+     under the theme legend bar above it. */
+  max-height: 0;
   opacity: 0;
   pointer-events: none;
 }
@@ -473,10 +488,16 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-/* Bigger during the countdown, where it's the main thing on screen. */
+/* Much bigger during the countdown, where it's the main thing on screen. */
 .theme-legend-item.is-lg {
-  font-size: 1.15rem;
-  padding: 0.5rem 1.1rem;
+  font-size: 1.75rem;
+  padding: 0.7rem 1.4rem;
+  gap: 0.7rem;
+}
+
+.theme-legend-item.is-lg :deep(.badge-dot) {
+  width: 1.3rem;
+  height: 1.3rem;
 }
 
 /* Standalone bar variant: shown once colors are revealed (no more countdown

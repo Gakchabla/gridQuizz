@@ -2,11 +2,16 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
+use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
-#[ApiResource]
+#[ApiFilter(SearchFilter::class, properties: ['session' => 'exact'])]
+// Collections here are always scoped to one session (never huge) and the
+// front end wants the full set in one call — no pagination needed.
+#[ApiResource(paginationEnabled: false)]
 class Theme
 {
     #[ORM\Id]

@@ -87,14 +87,22 @@ const DEFAULT_NORMAL_QUESTION_COUNT = 5
 
 const newTheme = ref({ name: '', color: '', bonus: false, playerName: '' })
 
+// One request per collection (filtered by session) instead of one request per
+// theme/question/player — a session with many questions could mean dozens of
+// parallel requests just to load the edit screen.
+async function fetchCollection(resource) {
+  const collection = await apiFetch(`/api/${resource}?session=${encodeURIComponent(session.value['@id'])}`)
+  return collection.member
+}
+
 async function load() {
   loading.value = true
   try {
     session.value = await apiFetch(`/api/sessions/${props.id}`)
     const [themeList, questionList, playerList] = await Promise.all([
-      Promise.all(session.value.themes.map((iri) => apiFetch(iri))),
-      Promise.all(session.value.questions.map((iri) => apiFetch(iri))),
-      Promise.all(session.value.players.map((iri) => apiFetch(iri))),
+      fetchCollection('themes'),
+      fetchCollection('questions'),
+      fetchCollection('players'),
     ])
     themes.value = themeList
     questions.value = questionList
