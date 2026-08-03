@@ -37,6 +37,12 @@ class Player
     #[ORM\Column]
     private int $score = 0;
 
+    // When true, this player's own theme questions show their color (instead
+    // of black) on the grid during their turn — a hint to help them find
+    // their own theme faster.
+    #[ORM\Column]
+    private bool $easyMode = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -86,6 +92,18 @@ class Player
     public function setScore(int $score): static
     {
         $this->score = $score;
+
+        return $this;
+    }
+
+    public function isEasyMode(): bool
+    {
+        return $this->easyMode;
+    }
+
+    public function setEasyMode(bool $easyMode): static
+    {
+        $this->easyMode = $easyMode;
 
         return $this;
     }

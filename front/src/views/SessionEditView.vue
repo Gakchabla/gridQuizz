@@ -87,26 +87,18 @@ const DEFAULT_NORMAL_QUESTION_COUNT = 5
 
 const newTheme = ref({ name: '', color: '', bonus: false, playerName: '' })
 
-// One request per collection (filtered by session) instead of one request per
-// theme/question/player — a session with many questions could mean dozens of
-// parallel requests just to load the edit screen.
-async function fetchCollection(resource) {
-  const collection = await apiFetch(`/api/${resource}?session=${encodeURIComponent(session.value['@id'])}`)
-  return collection.member
-}
-
 async function load() {
   loading.value = true
   try {
-    session.value = await apiFetch(`/api/sessions/${props.id}`)
-    const [themeList, questionList, playerList] = await Promise.all([
-      fetchCollection('themes'),
-      fetchCollection('questions'),
-      fetchCollection('players'),
-    ])
-    themes.value = themeList
-    questions.value = questionList
-    players.value = playerList
+    // Single request for session + themes + questions + players instead of
+    // 4 separate ones — each request pays a fixed latency floor through
+    // Docker Desktop's Windows host port-forwarding, so cutting round-trips
+    // is what actually moves the needle.
+    const state = await apiFetch(`/api/sessions/${props.id}/state`)
+    session.value = state.session
+    themes.value = state.themes
+    questions.value = state.questions
+    players.value = state.players
     await ensureBonusTheme()
   } catch (e) {
     error.value = e.message
@@ -201,6 +193,16 @@ async function addTheme() {
   if (!isBonus && bonusThemes.value.length === 1) {
     await addBlankQuestions(bonusThemes.value[0], 1)
   }
+}
+
+async function toggleEasyMode(player, easyMode) {
+  const updated = await apiFetch(player['@id'], {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/merge-patch+json' },
+    body: JSON.stringify({ easyMode }),
+  })
+  const index = players.value.findIndex((p) => p['@id'] === player['@id'])
+  if (index !== -1) players.value[index] = updated
 }
 
 async function removeTheme(theme) {
@@ -349,6 +351,18 @@ onBeforeUnmount(() => {
               <template v-else-if="playerFor(t)">— {{ playerFor(t).name }}</template>
               ({{ questionCountFor(t) }})
             </span>
+            <label
+              v-if="!t.bonus && playerFor(t)"
+              class="field field-checkbox"
+              title="Pendant son tour, les questions de son thème s'affichent en couleur au lieu de noir."
+            >
+              <input
+                type="checkbox"
+                :checked="playerFor(t).easyMode"
+                @change="toggleEasyMode(playerFor(t), $event.target.checked)"
+              />
+              Mode facile
+            </label>
             <button class="btn btn-danger btn-sm" type="button" @click="removeTheme(t)">Supprimer</button>
           </li>
         </ul>

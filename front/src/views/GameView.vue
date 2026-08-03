@@ -164,10 +164,15 @@ async function refreshTurnState() {
 async function load() {
   loading.value = true
   try {
-    session.value = await apiFetch(`/api/sessions/${props.id}`)
-    themes.value = await fetchCollection('themes')
+    // Single request for session + themes + questions + players instead of
+    // 4 separate ones: each request pays a fixed latency floor through
+    // Docker Desktop's Windows host port-forwarding, so cutting round-trips
+    // (not just per-request payload) is what actually moves the needle.
+    const state = await apiFetch(`/api/sessions/${props.id}/state`)
+    session.value = state.session
+    themes.value = state.themes
 
-    let currentQuestions = await fetchQuestions()
+    let currentQuestions = state.questions
     // A number is only assigned once a game has started (see ResetSessionProcessor).
     // A null number means this session has never been played: start it now.
     // "Nouvelle partie" links here with ?new=1 to force a fresh start even when
@@ -207,6 +212,19 @@ function themeColor(question) {
 
 function themeOfPlayer(player) {
   return themes.value.find((t) => t['@id'] === player.theme)
+}
+
+// Outside the memorization window, cells are black — except for a player in
+// "mode facile": during their turn, their own theme's questions keep showing
+// their color, as a hint to help them spot their theme faster.
+function cellColor(question) {
+  if (revealed.value) {
+    return themeColor(question)
+  }
+  if (currentPlayer.value?.easyMode && question.theme === currentPlayer.value.theme) {
+    return themeColor(question)
+  }
+  return '#000000'
 }
 
 async function selectQuestion(question) {
@@ -345,7 +363,7 @@ onUnmounted(() => {
               v-for="number in gridOrder"
               :key="number"
               :number="number"
-              :color="revealed ? themeColor(questionByNumber.get(number)) : '#000000'"
+              :color="cellColor(questionByNumber.get(number))"
               :hide-number="countdown > 0"
               :disabled="questionByNumber.get(number).answered || countdown > 0"
               @click="selectQuestion(questionByNumber.get(number))"
