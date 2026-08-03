@@ -90,8 +90,14 @@ onMounted(loadSessions)
             <router-link class="btn btn-primary btn-sm" :to="{ name: 'session-play', params: { id: session.id } }">
               ▶ Jouer
             </router-link>
-            <button class="btn btn-danger btn-sm" type="button" @click="deleteSession(session)">
-              🗑 Supprimer
+            <button
+              class="btn btn-danger btn-icon"
+              type="button"
+              title="Supprimer la session"
+              aria-label="Supprimer la session"
+              @click="deleteSession(session)"
+            >
+              ✕
             </button>
           </div>
         </li>
@@ -121,3 +127,11 @@ onMounted(loadSessions)
     </section>
   </div>
 </template>
+
+<style scoped>
+.btn-icon {
+  padding: 0.4rem 0.55rem;
+  line-height: 1;
+  font-size: 0.85rem;
+}
+</style>
