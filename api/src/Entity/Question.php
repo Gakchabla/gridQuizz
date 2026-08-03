@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\State\ResolveQuestionProcessor;
+use App\State\SelectQuestionProcessor;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -31,6 +32,12 @@ use Doctrine\ORM\Mapping as ORM;
         uriTemplate: '/questions/{id}/resolve',
         name: 'resolve',
         processor: ResolveQuestionProcessor::class,
+    ),
+    new Post(
+        uriTemplate: '/questions/{id}/select',
+        name: 'select',
+        deserialize: false,
+        processor: SelectQuestionProcessor::class,
     ),
 ])]
 class Question

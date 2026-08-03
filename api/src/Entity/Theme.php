@@ -34,6 +34,12 @@ class Theme
     #[ORM\Column]
     private bool $bonus = false;
 
+    // Reserve pool (no owning player, not placed in the grid at reset time):
+    // a question from here gets swapped in when a non-easy-mode player steals
+    // a question from an easy-mode theme (see SelectQuestionProcessor).
+    #[ORM\Column]
+    private bool $hardcore = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -83,6 +89,18 @@ class Theme
     public function setBonus(bool $bonus): static
     {
         $this->bonus = $bonus;
+
+        return $this;
+    }
+
+    public function isHardcore(): bool
+    {
+        return $this->hardcore;
+    }
+
+    public function setHardcore(bool $hardcore): static
+    {
+        $this->hardcore = $hardcore;
 
         return $this;
     }

@@ -17,11 +17,22 @@ final class ResetSessionProcessor implements ProcessorInterface
 
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): Session
     {
-        $numbers = range(1, $data->getQuestions()->count());
-        shuffle($numbers);
-
+        // Hardcore questions are a reserve, never placed on the grid at reset
+        // time — they only appear via SelectQuestionProcessor's swap.
+        $gridQuestions = [];
         foreach ($data->getQuestions() as $question) {
             $question->setAnswered(false);
+            if ($question->getTheme()->isHardcore()) {
+                $question->setNumber(null);
+            } else {
+                $gridQuestions[] = $question;
+            }
+        }
+
+        $numbers = range(1, count($gridQuestions));
+        shuffle($numbers);
+
+        foreach ($gridQuestions as $question) {
             $question->setNumber(array_pop($numbers));
         }
 

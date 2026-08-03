@@ -47,7 +47,13 @@ function runCountdown(seconds = 10) {
   })
 }
 
-const allAnswered = computed(() => questions.value.length > 0 && questions.value.every((q) => q.answered))
+// Based on the grid's numbers, not every Question row: the hardcore reserve
+// (never placed on the grid) and a "stolen" question sent back to the
+// reserve (number cleared) both sit outside `gridOrder` and would otherwise
+// block this from ever becoming true.
+const allAnswered = computed(
+  () => gridOrder.value.length > 0 && gridOrder.value.every((number) => questionByNumber.value.get(number)?.answered),
+)
 
 // Focus mode (sidebar hidden, grid at its biggest) covers both the color
 // memorization window AND the countdown that precedes it, so the game screen
@@ -60,9 +66,10 @@ const rankedPlayers = computed(() =>
 
 // One unified list for the sidebar: normal themes paired with their player
 // (ranked by score), plus the bonus theme (no player) tacked on at the end.
+// The hardcore theme is a hidden reserve (see PLAN.md) — never shown here.
 const sidebarEntries = computed(() => {
   const normal = themes.value
-    .filter((t) => !t.bonus)
+    .filter((t) => !t.bonus && !t.hardcore)
     .map((theme) => ({ theme, player: players.value.find((p) => p.theme === theme['@id']) ?? null }))
     .sort((a, b) => (b.player?.score ?? 0) - (a.player?.score ?? 0))
   const bonus = themes.value.filter((t) => t.bonus).map((theme) => ({ theme, player: null }))
@@ -71,9 +78,10 @@ const sidebarEntries = computed(() => {
 
 // Theme name + color, bonus last — shown as a legend during the countdown and
 // the color-reveal window, since the sidebar (which normally carries this
-// info via the scoreboard) is hidden throughout both.
+// info via the scoreboard) is hidden throughout both. Hardcore stays hidden
+// here too — it's a surprise, not something to telegraph up front.
 const legendThemes = computed(() => {
-  const normal = themes.value.filter((t) => !t.bonus)
+  const normal = themes.value.filter((t) => !t.bonus && !t.hardcore)
   const bonus = themes.value.filter((t) => t.bonus)
   return [...normal, ...bonus]
 })
@@ -231,13 +239,25 @@ async function selectQuestion(question) {
   if (question.answered) {
     return
   }
-  selectedQuestion.value = question
-  await apiFetch(question['@id'], {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/merge-patch+json' },
-    body: JSON.stringify({ answered: true }),
-  })
+  // Server decides: normally just marks the question answered, but a
+  // non-easy-mode player picking an easy-mode theme's question gets swapped
+  // for a hardcore one instead (see SelectQuestionProcessor) — so the active
+  // question here may not be the one that was clicked.
+  const activeQuestion = await apiFetch(`${question['@id']}/select`, { method: 'POST' })
+
+  if (activeQuestion['@id'] !== question['@id']) {
+    question.number = null
+    const swapped = questions.value.find((q) => q['@id'] === activeQuestion['@id'])
+    if (swapped) {
+      swapped.number = activeQuestion.number
+      swapped.answered = true
+      selectedQuestion.value = swapped
+      return
+    }
+  }
+
   question.answered = true
+  selectedQuestion.value = question
 }
 
 async function resolveQuestion(correct) {

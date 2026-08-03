@@ -18,10 +18,13 @@ const addingRound = ref(false)
 
 const gameInProgress = computed(() => questions.value.some((q) => q.number !== null))
 
-const normalThemes = computed(() => themes.value.filter((t) => !t.bonus))
+const normalThemes = computed(() => themes.value.filter((t) => !t.bonus && !t.hardcore))
 const bonusThemes = computed(() => themes.value.filter((t) => t.bonus))
+const hardcoreThemes = computed(() => themes.value.filter((t) => t.hardcore))
 // Bonus theme always shown last, wherever themes are listed.
-const orderedThemes = computed(() => [...normalThemes.value, ...bonusThemes.value])
+const orderedThemes = computed(() => [...normalThemes.value, ...hardcoreThemes.value, ...bonusThemes.value])
+
+const easyModeThemes = computed(() => normalThemes.value.filter((t) => playerFor(t)?.easyMode))
 
 function questionsFor(theme) {
   return questions.value.filter((q) => q.theme === theme['@id'])
@@ -36,14 +39,20 @@ function playerFor(theme) {
 }
 
 // See PLAN.md: 1 player per normal theme, all normal themes have the same
-// question count Q, and the bonus theme has one question per theme/player
-// combo (= number of normal themes) — so everyone answers Q+1 questions by
-// the end, however they pick.
+// base question count Q (easy-mode themes get one extra "buffer" question),
+// the bonus theme has one question per theme/player combo minus one per
+// easy-mode theme (that question funds the buffer), and the hardcore reserve
+// has Q questions — so everyone still answers Q+1 questions by the end,
+// however they pick, and a "steal" from an easy-mode theme has a hardcore
+// question to swap in.
 const readiness = computed(() => {
   const issues = []
 
   if (bonusThemes.value.length !== 1) {
     issues.push('Il faut exactement une catégorie bonus.')
+  }
+  if (hardcoreThemes.value.length !== 1) {
+    issues.push('Il faut exactement une catégorie hardcore.')
   }
   if (!normalThemes.value.length) {
     issues.push('Ajoutez au moins un thème normal.')
@@ -52,13 +61,22 @@ const readiness = computed(() => {
     issues.push('Chaque thème normal doit avoir un joueur.')
   }
 
-  const normalCounts = normalThemes.value.map(questionCountFor)
-  const questionsPerNormalTheme = normalCounts[0] ?? 0
-  if (normalCounts.length && (questionsPerNormalTheme < 1 || normalCounts.some((c) => c !== questionsPerNormalTheme))) {
-    issues.push('Tous les thèmes normaux doivent avoir le même nombre de questions (au moins 1).')
+  // Easy-mode themes carry one extra "buffer" question — normalize it out
+  // before comparing, since every normal theme must share the same base Q.
+  const baseCounts = normalThemes.value.map((t) => questionCountFor(t) - (playerFor(t)?.easyMode ? 1 : 0))
+  const questionsPerNormalTheme = baseCounts[0] ?? 0
+  if (baseCounts.length && (questionsPerNormalTheme < 1 || baseCounts.some((c) => c !== questionsPerNormalTheme))) {
+    issues.push(
+      'Tous les thèmes normaux doivent avoir le même nombre de questions de base (au moins 1) — mode facile excepté (une question en plus).',
+    )
   }
-  if (bonusThemes.value.length === 1 && questionCountFor(bonusThemes.value[0]) !== normalThemes.value.length) {
-    issues.push(`La catégorie bonus doit avoir exactement ${normalThemes.value.length} question(s).`)
+
+  const expectedBonusCount = Math.max(0, normalThemes.value.length - easyModeThemes.value.length)
+  if (bonusThemes.value.length === 1 && questionCountFor(bonusThemes.value[0]) !== expectedBonusCount) {
+    issues.push(`La catégorie bonus doit avoir exactement ${expectedBonusCount} question(s).`)
+  }
+  if (hardcoreThemes.value.length === 1 && questionCountFor(hardcoreThemes.value[0]) !== questionsPerNormalTheme) {
+    issues.push(`La catégorie hardcore doit avoir exactement ${questionsPerNormalTheme} question(s).`)
   }
 
   return { ready: issues.length === 0, issues, questionsPerPlayer: questionsPerNormalTheme + 1 }
@@ -81,9 +99,21 @@ const THEME_COLORS = [
   '#e51eb9',
 ]
 
+// Fixed, outside the 10-color palette (like bonus's 'rainbow') — the hardcore
+// theme is auto-managed, never picked from the swatches.
+const HARDCORE_COLOR = '#f43f5e'
+
 const usedColors = computed(() => new Set(themes.value.map((t) => t.color)))
 
 const DEFAULT_NORMAL_QUESTION_COUNT = 5
+
+// "Q": the shared base question count across normal themes (min, so a stray
+// easy-mode buffer doesn't skew it) — the target when creating new themes.
+const baseQuestionCount = computed(() =>
+  normalThemes.value.length
+    ? Math.min(...normalThemes.value.map((t) => questionCountFor(t) - (playerFor(t)?.easyMode ? 1 : 0)))
+    : DEFAULT_NORMAL_QUESTION_COUNT,
+)
 
 const newTheme = ref({ name: '', color: '', bonus: false, playerName: '' })
 
@@ -100,6 +130,7 @@ async function load() {
     questions.value = state.questions
     players.value = state.players
     await ensureBonusTheme()
+    await ensureHardcoreTheme()
   } catch (e) {
     error.value = e.message
   } finally {
@@ -118,7 +149,28 @@ async function ensureBonusTheme() {
     body: JSON.stringify({ session: `/api/sessions/${props.id}`, name: 'Bonus', color: 'rainbow', bonus: true }),
   })
   themes.value.push(theme)
-  await addBlankQuestions(theme, normalThemes.value.length)
+  await addBlankQuestions(theme, Math.max(0, normalThemes.value.length - easyModeThemes.value.length))
+}
+
+// Every session should have exactly one hardcore category — the reserve a
+// question gets swapped in from when someone steals an easy-mode theme's
+// question (see SelectQuestionProcessor). Same question count as any other
+// normal theme (Q), never placed on the grid until swapped in.
+async function ensureHardcoreTheme() {
+  if (hardcoreThemes.value.length > 0) {
+    return
+  }
+  const theme = await apiFetch('/api/themes', {
+    method: 'POST',
+    body: JSON.stringify({
+      session: `/api/sessions/${props.id}`,
+      name: 'Hardcore',
+      color: HARDCORE_COLOR,
+      hardcore: true,
+    }),
+  })
+  themes.value.push(theme)
+  await addBlankQuestions(theme, baseQuestionCount.value)
 }
 
 async function saveParams() {
@@ -157,10 +209,8 @@ async function addTheme() {
   const isBonus = newTheme.value.bonus
   // Capture the target count before the new theme exists, so it doesn't skew its own average.
   const target = isBonus
-    ? normalThemes.value.length
-    : normalThemes.value.length
-      ? questionCountFor(normalThemes.value[0])
-      : DEFAULT_NORMAL_QUESTION_COUNT
+    ? Math.max(0, normalThemes.value.length - easyModeThemes.value.length)
+    : baseQuestionCount.value
 
   const theme = await apiFetch('/api/themes', {
     method: 'POST',
@@ -195,6 +245,16 @@ async function addTheme() {
   }
 }
 
+// Removes one question from a theme — preferably an unanswered one, so an
+// in-progress game (if any) isn't broken by yanking an already-played question.
+async function removeOneQuestion(theme) {
+  const candidates = questionsFor(theme)
+  const target = candidates.find((q) => !q.answered) ?? candidates[candidates.length - 1]
+  if (target) {
+    await removeQuestion(target)
+  }
+}
+
 async function toggleEasyMode(player, easyMode) {
   const updated = await apiFetch(player['@id'], {
     method: 'PATCH',
@@ -203,6 +263,22 @@ async function toggleEasyMode(player, easyMode) {
   })
   const index = players.value.findIndex((p) => p['@id'] === player['@id'])
   if (index !== -1) players.value[index] = updated
+
+  // An easy-mode theme gets one extra "buffer" question (so its player still
+  // has enough of their own theme left if one gets stolen and swapped for a
+  // hardcore question) — funded by removing one from the bonus category.
+  const theme = themes.value.find((t) => t['@id'] === player.theme)
+  const bonus = bonusThemes.value[0]
+  if (!theme) {
+    return
+  }
+  if (easyMode) {
+    await addBlankQuestions(theme, 1)
+    if (bonus) await removeOneQuestion(bonus)
+  } else {
+    await removeOneQuestion(theme)
+    if (bonus) await addBlankQuestions(bonus, 1)
+  }
 }
 
 async function removeTheme(theme) {
@@ -219,6 +295,10 @@ async function addQuestionRound() {
   addingRound.value = true
   try {
     await Promise.all(normalThemes.value.map((t) => addBlankQuestions(t, 1)))
+    // Q goes up by one for everyone — the hardcore reserve must keep pace.
+    if (hardcoreThemes.value.length === 1) {
+      await addBlankQuestions(hardcoreThemes.value[0], 1)
+    }
   } finally {
     addingRound.value = false
   }
@@ -348,11 +428,12 @@ onBeforeUnmount(() => {
               <ColorDot :color="t.color" />
               {{ t.name }}
               <template v-if="t.bonus">— ⭐ Bonus</template>
+              <template v-else-if="t.hardcore">— 💀 Hardcore</template>
               <template v-else-if="playerFor(t)">— {{ playerFor(t).name }}</template>
               ({{ questionCountFor(t) }})
             </span>
             <label
-              v-if="!t.bonus && playerFor(t)"
+              v-if="!t.bonus && !t.hardcore && playerFor(t)"
               class="field field-checkbox"
               title="Pendant son tour, les questions de son thème s'affichent en couleur au lieu de noir."
             >
@@ -408,7 +489,8 @@ onBeforeUnmount(() => {
           <h3 class="theme-questions-title">
             <span class="badge">
               <ColorDot :color="t.color" />
-              {{ t.name }}<template v-if="t.bonus"> — ⭐ Bonus</template>
+              {{ t.name }}<template v-if="t.bonus"> — ⭐ Bonus</template
+              ><template v-if="t.hardcore"> — 💀 Hardcore</template>
             </span>
             <span class="list-item-meta">{{ questionCountFor(t) }} question(s)</span>
           </h3>
