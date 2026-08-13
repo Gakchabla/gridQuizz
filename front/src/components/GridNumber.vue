@@ -4,6 +4,7 @@ defineProps({
   color: { type: String, required: true },
   disabled: { type: Boolean, default: false },
   hideNumber: { type: Boolean, default: false },
+  answered: { type: Boolean, default: false },
 })
 defineEmits(['click'])
 </script>
@@ -17,7 +18,7 @@ defineEmits(['click'])
     :disabled="disabled"
     @click="$emit('click')"
   >
-    <span v-if="disabled">✓</span>
+    <span v-if="answered">✓</span>
     <span v-else-if="!hideNumber">{{ number }}</span>
   </button>
 </template>

@@ -47,10 +47,9 @@ function runCountdown(seconds = 10) {
   })
 }
 
-// Based on the grid's numbers, not every Question row: the hardcore reserve
-// (never placed on the grid) and a "stolen" question sent back to the
-// reserve (number cleared) both sit outside `gridOrder` and would otherwise
-// block this from ever becoming true.
+// Based on the grid's numbers, not every Question row: a legacy hardcore
+// theme (from before that mechanic was dropped) may still carry questions
+// with number = null, which would otherwise block this from ever becoming true.
 const allAnswered = computed(
   () => gridOrder.value.length > 0 && gridOrder.value.every((number) => questionByNumber.value.get(number)?.answered),
 )
@@ -145,7 +144,12 @@ function startRevealTimer() {
 function buildGridOrder() {
   // The "shuffled" session param only controls the grid's visual layout
   // (which cell each number lands on), independently of which question a number hides.
-  const numbers = questions.value.map((q) => q.number).sort((a, b) => a - b)
+  // A legacy hardcore theme's questions carry number = null (see ResetSessionProcessor)
+  // and must be excluded here.
+  const numbers = questions.value
+    .map((q) => q.number)
+    .filter((n) => n !== null)
+    .sort((a, b) => a - b)
   gridOrder.value = session.value.shuffled ? shuffle(numbers) : numbers
 }
 
@@ -222,11 +226,25 @@ function themeOfPlayer(player) {
   return themes.value.find((t) => t['@id'] === player.theme)
 }
 
-// Outside the memorization window, cells are black — except for a player in
-// "mode facile": during their turn, their own theme's questions keep showing
-// their color, as a hint to help them spot their theme faster.
+function ownerOf(question) {
+  return players.value.find((p) => p.theme === question.theme) ?? null
+}
+
+// A question whose theme's owner is in "mode facile" can only be picked by
+// that owner, on their own turn — everyone else sees it grayed out and
+// unclickable, so an easy-mode player's questions can never be "stolen".
+function isLockedForOthers(question) {
+  const owner = ownerOf(question)
+  return !!owner?.easyMode && owner['@id'] !== currentPlayer.value?.['@id']
+}
+
+// Outside the memorization window, cells are black — except once answered
+// (color comes back for good, so players can see progress at a glance) and
+// except for a player in "mode facile": during their turn, their own theme's
+// still-unanswered questions keep showing their color, as a hint to help
+// them spot their theme faster.
 function cellColor(question) {
-  if (revealed.value) {
+  if (revealed.value || question.answered) {
     return themeColor(question)
   }
   if (currentPlayer.value?.easyMode && question.theme === currentPlayer.value.theme) {
@@ -239,23 +257,11 @@ async function selectQuestion(question) {
   if (question.answered) {
     return
   }
-  // Server decides: normally just marks the question answered, but a
-  // non-easy-mode player picking an easy-mode theme's question gets swapped
-  // for a hardcore one instead (see SelectQuestionProcessor) — so the active
-  // question here may not be the one that was clicked.
-  const activeQuestion = await apiFetch(`${question['@id']}/select`, { method: 'POST' })
-
-  if (activeQuestion['@id'] !== question['@id']) {
-    question.number = null
-    const swapped = questions.value.find((q) => q['@id'] === activeQuestion['@id'])
-    if (swapped) {
-      swapped.number = activeQuestion.number
-      swapped.answered = true
-      selectedQuestion.value = swapped
-      return
-    }
-  }
-
+  await apiFetch(question['@id'], {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/merge-patch+json' },
+    body: JSON.stringify({ answered: true }),
+  })
   question.answered = true
   selectedQuestion.value = question
 }
@@ -385,7 +391,12 @@ onUnmounted(() => {
               :number="number"
               :color="cellColor(questionByNumber.get(number))"
               :hide-number="countdown > 0"
-              :disabled="questionByNumber.get(number).answered || countdown > 0"
+              :answered="questionByNumber.get(number).answered"
+              :disabled="
+                questionByNumber.get(number).answered ||
+                countdown > 0 ||
+                isLockedForOthers(questionByNumber.get(number))
+              "
               @click="selectQuestion(questionByNumber.get(number))"
             />
           </div>
