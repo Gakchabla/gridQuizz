@@ -1,0 +1,102 @@
+INSTALLATION - Faire tourner Gridquizz en local sur un poste Windows vierge
+============================================================================
+
+Ce projet tourne entierement dans Docker (base Postgres, API Symfony sur
+FrankenPHP, front Vue/Vite) : aucun besoin d'installer PHP, Node, Composer
+ou Postgres directement sur la machine. Seuls Git et Docker sont necessaires.
+
+
+1. Prerequis a installer
+-------------------------
+
+1. Git for Windows
+   https://git-scm.com/download/win
+   (pour cloner le depot)
+
+2. WSL2 (Windows Subsystem for Linux 2)
+   Necessaire comme backend pour Docker Desktop sur Windows.
+   Dans un PowerShell EN ADMINISTRATEUR :
+       wsl --install
+   Redemarrer la machine ensuite.
+   Requiert Windows 10 version 2004+ (build 19041+) ou Windows 11.
+   La virtualisation doit etre activee dans le BIOS/UEFI de la machine
+   (activee par defaut sur la plupart des machines recentes ; sinon
+   chercher "Virtualization Technology" / "VT-x" / "SVM Mode" dans le
+   BIOS).
+
+3. Docker Desktop pour Windows
+   https://www.docker.com/products/docker-desktop/
+   A l'installation, choisir le backend "WSL2" (propose par defaut sur
+   les versions recentes).
+   Lancer Docker Desktop au moins une fois et attendre l'indicateur
+   "Engine running" avant de continuer.
+
+4. (Optionnel) Un editeur de code, par exemple Visual Studio Code
+   https://code.visualstudio.com/
+
+
+2. Recuperer et lancer le projet
+----------------------------------
+
+Dans un PowerShell (pas besoin d'etre administrateur pour cette partie) :
+
+    git clone https://github.com/Gakchabla/gridQuizz.git
+    cd gridQuizz
+    docker compose up
+
+Le tout premier lancement est plus long que les suivants : l'image PHP se
+construit (composer install) et le front installe ses dependances
+(npm install) avant de demarrer. Compter quelques minutes.
+
+Une fois les 3 services demarres (database, php, front), ouvrir un second
+terminal dans le meme dossier et executer les migrations de base de
+donnees (cree le schema ET importe la session de questions "Quizz" fournie
+avec le projet) :
+
+    docker compose exec php php bin/console doctrine:migrations:migrate --no-interaction
+
+
+3. Acceder a l'application
+-----------------------------
+
+Front (interface de jeu)   : http://localhost:5174
+API (documentation Swagger) : http://localhost:8000
+Base Postgres               : localhost:5432
+                               (utilisateur / mot de passe / base :
+                                gridquizz / gridquizz / gridquizz)
+
+
+4. Problemes courants
+------------------------
+
+- Port deja utilise (5174, 8000 ou 5432) : un autre programme occupe deja
+  ce port sur la machine. Modifier le mapping correspondant dans
+  docker-compose.yml, cote gauche du "host:container" (ex. remplacer
+  "5174:5173" par "5175:5173"). Si c'est le port de l'API (8000) qui
+  change, mettre aussi a jour VITE_API_URL dans front/.env pour qu'il
+  pointe vers le nouveau port.
+
+- "docker" ou "docker compose" non reconnu dans le terminal : verifier
+  que Docker Desktop est bien demarre (icone baleine dans la barre des
+  taches, statut "Engine running") ET que le terminal a ete ouvert APRES
+  le demarrage de Docker Desktop (sinon fermer/rouvrir le terminal).
+
+- Erreur de "credential helper" Docker lors du build (rencontre surtout
+  avec Git Bash) : ajouter au PATH le dossier
+  "C:\Program Files\Docker\Docker\resources\bin".
+
+- Premier chargement du front ou de l'API un peu lent : normal, Vite et
+  FrankenPHP compilent/prechauffent au tout premier acces.
+
+
+5. Arreter / reprendre le projet
+------------------------------------
+
+Arreter les conteneurs (conserve les donnees) :
+    docker compose down
+
+Relancer plus tard :
+    docker compose up -d
+
+Tout supprimer, y compris la base de donnees (repart de zero) :
+    docker compose down -v
